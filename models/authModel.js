@@ -3,7 +3,7 @@ const bcrypt = require("bcrypt");
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
-  password: { type: String, required: true, minlength: 6 },
+  password: { type: String, required: true, minlength: 6, select: true },
   role: {
     type: String,
     required: true,
@@ -13,8 +13,14 @@ const userSchema = new mongoose.Schema({
   },
   permissions: {
     type: [String],
-    enum: ["delete Order", "update Order", "add Product", "inactive Product"],
+    enum: ["delete Product", "update Order", "add Product", "inactive Product"],
     default: [],
+  },
+  otp: {
+    type: String,
+  },
+  otpExpiresAt: {
+    type: Date,
   },
 });
 userSchema.pre("save", async function (next) {
@@ -27,4 +33,13 @@ userSchema.pre("save", async function (next) {
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
+//
+userSchema.methodsgenerateOTP = function () {
+  const otp = crypto.randomInt(100000, 999999).toString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  this.otp = otp;
+  this.otpExpiresAt = expiresAt;
+  return otp;
+};
+
 module.exports = mongoose.model("User", userSchema);

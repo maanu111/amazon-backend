@@ -1,8 +1,10 @@
 const User = require("../models/authModel.js");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
 const dotenv = require("dotenv");
 dotenv.config();
+
 const SECRET_KEY = process.env.JWT_SECRET;
 //
 const emailValidation = (email) => {
@@ -47,13 +49,77 @@ const registerUser = async (req, res) => {
   }
 };
 //
+const sendOtp = async (req, res) => {
+  const { email } = req.body;
+  const user = await User.findOne({ email });
+
+  if (!user) return res.status(404).json({ message: "User not found" });
+
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  user.otp = otp;
+  user.otpExpiresAt = Date.now() + 5 * 60 * 1000;
+  await user.save();
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+
+  const mailOptions = {
+    from: `Amazon <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "Your OTP Code",
+    html: `<p>Your OTP is <strong>${otp}</strong>. It expires in 5 minutes.</p>`,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    return res.status(200).json({ message: "OTP sent successfully" });
+  } catch (error) {
+    console.error("Email error:", error);
+    return res.status(500).json({ message: "Failed to send OTP" });
+  }
+};
+//
+const verifyOtp = async (req, res) => {
+  const { email, otp } = req.body;
+  const user = await User.findOne({ email });
+
+  if (!user || user.otp !== otp || Date.now() > user.otpExpiresAt)
+    return res.status(400).json({ message: "Invalid or expired OTP" });
+
+  user.otp = null;
+  user.otpExpiresAt = null;
+  await user.save();
+
+  const token = jwt.sign(
+    { _id: user._id, email: user.email, role: user.role },
+    SECRET_KEY,
+    { expiresIn: "4h" }
+  );
+
+  res.status(200).json({
+    message: "OTP verified",
+    token,
+    user: {
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      permissions: user.permissions || [],
+    },
+  });
+};
+//
 const updateUser = async (req, res) => {
   const { id } = req.params;
   const { name, email, permissions } = req.body;
 
-  const isAdmin = req.user.role?.toLowerCase() === "admin";
+  const isSuperAdmin = req.user.role?.toLowerCase() === "superadmin";
 
-  if (!isAdmin) {
+  if (!isSuperAdmin) {
     return res.status(403).json({ message: "Unauthorized access" });
   }
 
@@ -62,7 +128,7 @@ const updateUser = async (req, res) => {
   if (name) updateData.name = name;
   if (email) updateData.email = email;
 
-  if (isAdmin && Array.isArray(permissions)) {
+  if (isSuperAdmin && Array.isArray(permissions)) {
     const validPermissions = [
       "update Order",
       "add Product",
@@ -149,6 +215,7 @@ const loginUser = async (req, res) => {
       .status(401)
       .json({ message: "Invalid email or password (wrong password)" });
   }
+
   const token = jwt.sign(
     { _id: user._id, email: user.email, role: user.role },
     SECRET_KEY,
@@ -156,6 +223,7 @@ const loginUser = async (req, res) => {
       expiresIn: "4h",
     }
   );
+  const permissions = user.permissions || [];
 
   res.json({
     message: "Login successful",
@@ -171,6 +239,8 @@ const loginUser = async (req, res) => {
 
 module.exports = {
   registerUser,
+  sendOtp,
+  verifyOtp,
   getUsers,
   getUserById,
   deleteUser,
