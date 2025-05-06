@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
@@ -22,6 +23,13 @@ const userSchema = new mongoose.Schema({
   otpExpiresAt: {
     type: Date,
   },
+  resetPasswordToken: {
+    type: String,
+    select: false,
+  },
+  resetPasswordExpires: {
+    type: Date,
+  },
 });
 userSchema.pre("save", async function (next) {
   if (this.isModified("password")) {
@@ -40,6 +48,14 @@ userSchema.methodsgenerateOTP = function () {
   this.otp = otp;
   this.otpExpiresAt = expiresAt;
   return otp;
+};
+
+userSchema.methods.generateResetPasswordToken = function () {
+  const resetToken = crypto.randomBytes(32).toString("hex");
+  //
+  this.resetPasswordToken = resetToken;
+  this.resetPasswordExpires = Date.now() + 5 * 60 * 1000;
+  return resetToken;
 };
 
 module.exports = mongoose.model("User", userSchema);

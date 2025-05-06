@@ -31,5 +31,13 @@ const auth = async (req, res, next) => {
     res.status(401).json({ message: "Invalid token" });
   }
 };
-
-module.exports = auth;
+const isSuperAdmin = (req, res, next) => {
+  if (req.user.role !== "superadmin") {
+    return res.status(403).json({ message: "Access denied: Management Only" });
+  }
+  next();
+};
+module.exports = {
+  auth,
+  isSuperAdmin,
+};

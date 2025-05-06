@@ -8,7 +8,7 @@ router.post("/", authMiddleware, orderController.createOrder);
 router.get("/my-orders", authMiddleware, orderController.getUserOrders);
 //
 router.get("/all", orderController.getAllOrdersForAdmin);
-
+router.get("/sales-by-Users", orderController.getSalesByUsers);
 //
 router.get("/:id", authMiddleware, orderController.getOrderById);
 router.put("/:id/status", authMiddleware, orderController.updateOrderStatus);

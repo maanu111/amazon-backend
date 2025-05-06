@@ -38,23 +38,26 @@ const createOrder = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-
-// const getOrders = async (req, res) => {
-//   try {
-//     let orders;
-
-//     if (req.user.role === "admin") {
-//       orders = await Order.find();
-//     } else {
-//       orders = await Order.find({ userId: req.user._id });
-//     }
-
-//     res.status(200).json(orders);
-//   } catch (error) {
-//     console.error("Error fetching orders:", error);
-//     res.status(500).json({ message: "Failed to fetch orders" });
-//   }
-// };
+const getSalesByUsers = async (req, res) => {
+  try {
+    const result = await Order.aggregate([
+      { $unwind: "$products" },
+      {
+        $group: {
+          _id: "$userId",
+          totalSales: {
+            $sum: { $multiply: ["$products.price", "$products.quantity"] },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(500).json({ message: "aggregation failed", error: err.message });
+  }
+};
 
 const getUserOrders = async (req, res) => {
   try {
@@ -101,9 +104,9 @@ const updateOrderStatus = async (req, res) => {
 
 module.exports = {
   createOrder,
-  // getOrders,
   getUserOrders,
   getAllOrdersForAdmin,
   getOrderById,
+  getSalesByUsers,
   updateOrderStatus,
 };

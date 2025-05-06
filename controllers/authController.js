@@ -3,6 +3,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const dotenv = require("dotenv");
+const crypto = require("crypto");
 dotenv.config();
 
 const SECRET_KEY = process.env.JWT_SECRET;
@@ -83,6 +84,85 @@ const sendOtp = async (req, res) => {
     return res.status(500).json({ message: "Failed to send OTP" });
   }
 };
+//
+const requestResetLink = async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "user/email not found" });
+    }
+
+    const resetToken = user.generateResetPasswordToken();
+    await user.save();
+
+    const resetLink = `${process.env.FRONTEND_URL}/resetpassword?token=${resetToken}`;
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+
+    const mailOptions = {
+      from: `Amazon <${process.env.SMTP_USER}>`,
+      to: email,
+      subject: "Your Account Password Reset Link is Here...",
+      html: `Click the link below to reset your password:<br/><a href="${resetLink}">click here</a>`,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.status(200).json({
+      message:
+        "Reset link has been sent to your email. Please check your inbox.",
+      token: resetToken,
+    });
+  } catch (error) {
+    console.error("Reset email error:", error);
+    res
+      .status(500)
+      .json({ message: "Error occurred while sending reset email." });
+  }
+};
+
+//
+const resetPassword = async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  try {
+    const user = await User.findOne({ resetPasswordToken: token }).select(
+      "+resetPasswordToken +resetPasswordExpires"
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: "Invalid reset token" });
+    }
+
+    if (user.resetPasswordExpires < Date.now()) {
+      return res.status(400).json({ message: "Reset token has expired." });
+    }
+
+    user.password = newPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+
+    await user.save();
+
+    console.log("Password reset successfully for user:", user.name);
+
+    res.status(200).json({ message: "Password has been reset successfully." });
+  } catch (error) {
+    console.error("Reset error:", error);
+    res
+      .status(500)
+      .json({ message: "Error occurred while resetting password." });
+  }
+};
+
 //
 const verifyOtp = async (req, res) => {
   const { email, otp } = req.body;
@@ -236,6 +316,36 @@ const loginUser = async (req, res) => {
     },
   });
 };
+const loginSuperAdmin = async (req, res) => {
+  const { email, password } = req.body;
+  const user = await User.findOne({ email }).select("+password");
+  if (!user || !(await bcrypt.compare(password, user.password))) {
+    return res.status(401).json({ message: "invalid email or password" });
+  }
+  if (user.role !== "superadmin") {
+    return res.status(403).json({ message: "Access denied: Management Only" });
+  }
+  const token = jwt.sign(
+    {
+      _id: user._id,
+      email: user.email,
+      role: user.role,
+    },
+    process.env.SECRET_KEY,
+    { expiresIn: "4h" }
+  );
+  res.json({
+    message: "Login successfull",
+    token,
+    user: {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      permissions: user.permissions || [],
+    },
+  });
+};
 
 module.exports = {
   registerUser,
@@ -245,5 +355,8 @@ module.exports = {
   getUserById,
   deleteUser,
   loginUser,
+  loginSuperAdmin,
   updateUser,
+  requestResetLink,
+  resetPassword,
 };
